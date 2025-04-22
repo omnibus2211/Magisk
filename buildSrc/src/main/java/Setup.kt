@@ -71,10 +71,10 @@ private val Project.androidComponents
 
 fun Project.setupCommon() {
     androidBase {
-        compileSdkVersion(35)
-        buildToolsVersion = "35.0.1"
+        compileSdkVersion(36)
+        buildToolsVersion = "36.0.0"
         ndkPath = "$sdkDirectory/ndk/magisk"
-        ndkVersion = "28.0.12674087"
+        ndkVersion = "29.0.13113456"
 
         defaultConfig {
             minSdk = 23
@@ -115,6 +115,27 @@ fun Project.setupCommon() {
     }
 }
 
+private fun Project.downloadFile(url: String, checksum: String): File {
+    val file = layout.buildDirectory.file(checksum).get().asFile
+    if (file.exists()) {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { md.update(it.readAllBytes()) }
+        val hash = HexFormat.of().formatHex(md.digest())
+        if (hash != checksum) {
+            file.delete()
+        }
+    }
+    if (!file.exists()) {
+        file.parentFile.mkdirs()
+        URI(url).toURL().openStream().use { dl ->
+            file.outputStream().use {
+                dl.copyTo(it)
+            }
+        }
+    }
+    return file
+}
+
 const val BUSYBOX_DOWNLOAD_URL =
     "https://github.com/topjohnwu/magisk-files/releases/download/files/busybox-1.36.1.1.zip"
 const val BUSYBOX_ZIP_CHECKSUM =
@@ -144,24 +165,7 @@ fun Project.setupCoreLib() {
 
     val downloadBusybox by tasks.registering(Copy::class) {
         dependsOn(syncLibs)
-        val bb = layout.buildDirectory.file(BUSYBOX_ZIP_CHECKSUM).get().asFile
-        if (bb.exists()) {
-            val md = MessageDigest.getInstance("SHA-256")
-            bb.inputStream().use { md.update(it.readAllBytes()) }
-            val hash = HexFormat.of().formatHex(md.digest())
-            if (hash != BUSYBOX_ZIP_CHECKSUM) {
-                bb.delete()
-            }
-        }
-        if (!bb.exists()) {
-            bb.parentFile.mkdirs()
-            URI(BUSYBOX_DOWNLOAD_URL).toURL().openStream().use { dl ->
-                bb.outputStream().use {
-                    dl.copyTo(it)
-                }
-            }
-        }
-        from(zipTree(bb))
+        from(zipTree(downloadFile(BUSYBOX_DOWNLOAD_URL, BUSYBOX_ZIP_CHECKSUM)))
         include(abiList.map { "$it/libbusybox.so" })
         into("src/main/jniLibs")
     }
@@ -298,7 +302,7 @@ fun Project.setupAppCommon() {
         }
 
         defaultConfig {
-            targetSdk = 35
+            targetSdk = 36
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt")
             )
@@ -460,5 +464,33 @@ fun Project.setupStubApk() {
     }
     tasks.named<Delete>("clean") {
         delete.addAll(listOf("src/debug/AndroidManifest.xml", "src/release/AndroidManifest.xml"))
+    }
+}
+
+const val LSPOSED_DOWNLOAD_URL =
+    "https://github.com/LSPosed/LSPosed/releases/download/v1.9.2/LSPosed-v1.9.2-7024-zygisk-release.zip"
+const val LSPOSED_CHECKSUM =
+    "0ebc6bcb465d1c4b44b7220ab5f0252e6b4eb7fe43da74650476d2798bb29622"
+
+const val SHAMIKO_DOWNLOAD_URL =
+    "https://github.com/LSPosed/LSPosed.github.io/releases/download/shamiko-383/Shamiko-v1.2.1-383-release.zip"
+const val SHAMIKO_CHECKSUM =
+    "93754a038c2d8f0e985bad45c7303b96f70a93d8335060e50146f028d3a9b13f"
+
+fun Project.setupTestApk() {
+    setupAppCommon()
+
+    androidApp.applicationVariants.all {
+        val variantCapped = name.replaceFirstChar { it.uppercase() }
+        val dlTask by tasks.register("download${variantCapped}Lsposed", Sync::class) {
+            from(downloadFile(LSPOSED_DOWNLOAD_URL, LSPOSED_CHECKSUM)) {
+                rename { "lsposed.zip" }
+            }
+            from(downloadFile(SHAMIKO_DOWNLOAD_URL, SHAMIKO_CHECKSUM)) {
+                rename { "shamiko.zip" }
+            }
+            into("src/${this@all.name}/assets")
+        }
+        mergeAssetsProvider.configure { dependsOn(dlTask) }
     }
 }

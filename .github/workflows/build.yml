@@ -1,6 +1,16 @@
 name: Magisk Build
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - "app/**"
+      - "native/**"
+      - "buildSrc/**"
+      - "build.py"
+      - "gradle.properties"
+      - "gradle/libs.versions.toml"
+      - ".github/workflows/build.yml"
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -71,15 +81,16 @@ jobs:
     name: Test API ${{ matrix.version }} (x86_64)
     runs-on: ubuntu-24.04
     needs: build
+    if: ${{ github.event_name != 'push' }}
     strategy:
       fail-fast: false
       matrix:
         version: [23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
         type: [""]
         include:
-          - version: "Baklava"
+          - version: 36
             type: "google_apis"
-          - version: "Baklava"
+          - version: 36
             type: "google_apis_ps16k"
 
     steps:
@@ -117,6 +128,7 @@ jobs:
     name: Test API ${{ matrix.version }} (x86)
     runs-on: ubuntu-24.04
     needs: build
+    if: ${{ github.event_name != 'push' }}
     strategy:
       fail-fast: false
       matrix:
@@ -158,14 +170,15 @@ jobs:
     name: Test ${{ matrix.device }}
     runs-on: ubuntu-24.04
     needs: build
+    if: ${{ github.event_name != 'push' }}
     env:
       CF_HOME: /home/runner/aosp_cf_phone
     strategy:
       fail-fast: false
       matrix:
         include:
-          - branch: "aosp-main"
-            device: "aosp_cf_x86_64_phone"
+          - branch: "aosp-android-latest-release"
+            device: "aosp_cf_x86_64_only_phone"
 
     steps:
       - name: Check out

@@ -1,12 +1,17 @@
-use base::libc::{
-    makedev, mknod, syscall, SYS_dup3, O_CLOEXEC, O_RDWR, O_WRONLY, STDERR_FILENO, STDIN_FILENO,
-    STDOUT_FILENO, S_IFCHR,
+use base::{
+    FsPath, LOGGER, LogLevel, Logger, Utf8CStr, cstr,
+    libc::{
+        O_CLOEXEC, O_RDWR, O_WRONLY, S_IFCHR, STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO, SYS_dup3,
+        makedev, mknod, syscall,
+    },
+    open_fd, raw_cstr,
 };
-use base::{cstr, open_fd, raw_cstr, FsPath, LogLevel, Logger, Utf8CStr, LOGGER};
-use std::fs::File;
-use std::io::{IoSlice, Write};
-use std::mem;
-use std::os::fd::{FromRawFd, IntoRawFd, RawFd};
+use std::{
+    fs::File,
+    io::{IoSlice, Write},
+    mem,
+    os::fd::{FromRawFd, IntoRawFd, RawFd},
+};
 
 // SAFETY: magiskinit is single threaded
 static mut KMSG: RawFd = -1;
@@ -18,7 +23,7 @@ pub fn setup_klog() {
         if fd.is_err() {
             mknod(raw_cstr!("/null"), S_IFCHR | 0o666, makedev(1, 3));
             fd = open_fd!(cstr!("/null"), O_RDWR | O_CLOEXEC);
-            FsPath::from(cstr!("/null")).remove().ok();
+            cstr!("/null").remove().ok();
         }
         if let Ok(ref fd) = fd {
             syscall(SYS_dup3, fd, STDIN_FILENO, O_CLOEXEC);
@@ -31,7 +36,7 @@ pub fn setup_klog() {
         if fd.is_err() {
             mknod(raw_cstr!("/kmsg"), S_IFCHR | 0o666, makedev(1, 11));
             fd = open_fd!(cstr!("/kmsg"), O_WRONLY | O_CLOEXEC);
-            FsPath::from(cstr!("/kmsg")).remove().ok();
+            cstr!("/kmsg").remove().ok();
         }
         KMSG = fd.map(|fd| fd.into_raw_fd()).unwrap_or(-1);
     }

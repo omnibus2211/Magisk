@@ -1,5 +1,5 @@
-use crate::{ffi::Xperm, SePolicy};
-use base::{set_log_level_state, LogLevel};
+use crate::{SePolicy, ffi::Xperm};
+use base::{LogLevel, set_log_level_state};
 
 macro_rules! rules {
     (@args all) => {
@@ -104,8 +104,11 @@ impl SePolicy {
             // For tmpfs overlay on 2SI, Zygisk on lower Android versions and AVD scripts
             allow(["init", "zygote", "shell"], ["tmpfs"], ["file"], all);
 
+            // Allow magiskinit daemon to log to kmsg
+            allow(["kernel"], ["rootfs", "tmpfs"], ["chr_file"], ["write"]);
+
             // Allow magiskinit daemon to handle mock selinuxfs
-            allow(["kernel"], ["tmpfs"], ["fifo_file"], ["write"]);
+            allow(["kernel"], ["tmpfs"], ["fifo_file"], ["open", "read", "write"]);
 
             // For relabelling files
             allow(["rootfs"], ["labeledfs", "tmpfs"], ["filesystem"], ["associate"]);

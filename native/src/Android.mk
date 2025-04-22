@@ -27,7 +27,6 @@ LOCAL_SRC_FILES := \
     core/resetprop/resetprop.cpp \
     core/su/su.cpp \
     core/su/connect.cpp \
-    core/su/pts.cpp \
     core/zygisk/entry.cpp \
     core/zygisk/module.cpp \
     core/zygisk/hook.cpp \
@@ -63,18 +62,16 @@ LOCAL_STATIC_LIBRARIES := \
     libinit-rs
 
 LOCAL_SRC_FILES := \
-    init/init.cpp \
     init/mount.cpp \
     init/rootdir.cpp \
     init/getinfo.cpp \
-    init/twostage.cpp \
-    init/selinux.cpp \
     init/init-rs.cpp
 
 LOCAL_LDFLAGS := -static
 
 ifdef B_CRT0
 LOCAL_STATIC_LIBRARIES += crt0
+LOCAL_LDFLAGS += -Wl,--defsym=vfprintf=tiny_vfprintf
 endif
 
 include $(BUILD_EXECUTABLE)
@@ -89,8 +86,6 @@ LOCAL_STATIC_LIBRARIES := \
     libbase \
     liblzma \
     liblz4 \
-    libbz2 \
-    libz \
     libzopfli \
     libboot-rs
 
@@ -120,8 +115,6 @@ LOCAL_STATIC_LIBRARIES := \
     libbase \
     libpolicy \
     libpolicy-rs
-
-LOCAL_SRC_FILES := sepolicy/main.cpp
 
 include $(BUILD_EXECUTABLE)
 

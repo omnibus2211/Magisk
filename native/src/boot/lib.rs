@@ -6,9 +6,11 @@
 pub use base;
 use cpio::cpio_commands;
 use dtb::dtb_commands;
+pub use libbz2_rs_sys::*;
+pub use libz_rs_sys::*;
 use patch::hexpatch;
 use payload::extract_boot_from_payload;
-use sign::{get_sha, sha1_hash, sha256_hash, sign_boot_image, verify_boot_image, SHA};
+use sign::{SHA, get_sha, sha1_hash, sha256_hash, sign_boot_image, verify_boot_image};
 use std::env;
 
 mod cpio;

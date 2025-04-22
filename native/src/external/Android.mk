@@ -23,21 +23,6 @@ LOCAL_SRC_FILES := \
     lz4/lib/xxhash.c
 include $(BUILD_STATIC_LIBRARY)
 
-# libbz2.a
-include $(CLEAR_VARS)
-LOCAL_MODULE := libbz2
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/bzip2
-LOCAL_EXPORT_C_INCLUDES := $(LOCAL_C_INCLUDES)
-LOCAL_SRC_FILES := \
-    bzip2/blocksort.c  \
-    bzip2/huffman.c    \
-    bzip2/crctable.c   \
-    bzip2/randtable.c  \
-    bzip2/compress.c   \
-    bzip2/decompress.c \
-    bzip2/bzlib.c
-include $(BUILD_STATIC_LIBRARY)
-
 # liblzma.a
 include $(CLEAR_VARS)
 LOCAL_MODULE := liblzma
@@ -231,33 +216,6 @@ LOCAL_STATIC_LIBRARIES := libcxx
 LOCAL_SRC_FILES := \
     lsplt/lsplt/src/main/jni/elf_util.cc \
     lsplt/lsplt/src/main/jni/lsplt.cc
-include $(BUILD_STATIC_LIBRARY)
-
-# libz.a
-include $(CLEAR_VARS)
-LOCAL_MODULE:= libz
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/zlib
-LOCAL_EXPORT_C_INCLUDES := $(LOCAL_C_INCLUDES)
-LOCAL_CFLAGS := \
-    -DHAVE_HIDDEN -DZLIB_CONST -Wall -Werror \
-    -Wno-unused -Wno-unused-parameter -Wno-deprecated-non-prototype
-LOCAL_SRC_FILES := \
-    zlib/adler32.c \
-    zlib/compress.c \
-    zlib/cpu_features.c \
-    zlib/crc32.c \
-    zlib/deflate.c \
-    zlib/gzclose.c \
-    zlib/gzlib.c \
-    zlib/gzread.c \
-    zlib/gzwrite.c \
-    zlib/infback.c \
-    zlib/inffast.c \
-    zlib/inflate.c \
-    zlib/inftrees.c \
-    zlib/trees.c \
-    zlib/uncompr.c \
-    zlib/zutil.c
 include $(BUILD_STATIC_LIBRARY)
 
 # libzopfli.a

@@ -10,18 +10,18 @@ use std::process::exit;
 use std::str;
 
 use argh::FromArgs;
-use bytemuck::{from_bytes, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, from_bytes};
 use num_traits::cast::AsPrimitive;
 use size::{Base, Size, Style};
 
 use base::libc::{
-    c_char, dev_t, gid_t, major, makedev, minor, mknod, mode_t, uid_t, O_CLOEXEC, O_CREAT,
-    O_RDONLY, O_TRUNC, O_WRONLY, S_IFBLK, S_IFCHR, S_IFDIR, S_IFLNK, S_IFMT, S_IFREG, S_IRGRP,
-    S_IROTH, S_IRUSR, S_IWGRP, S_IWOTH, S_IWUSR, S_IXGRP, S_IXOTH, S_IXUSR,
+    O_CLOEXEC, O_CREAT, O_RDONLY, O_TRUNC, O_WRONLY, S_IFBLK, S_IFCHR, S_IFDIR, S_IFLNK, S_IFMT,
+    S_IFREG, S_IRGRP, S_IROTH, S_IRUSR, S_IWGRP, S_IWOTH, S_IWUSR, S_IXGRP, S_IXOTH, S_IXUSR,
+    c_char, dev_t, gid_t, major, makedev, minor, mknod, mode_t, uid_t,
 };
 use base::{
-    log_err, map_args, BytesExt, EarlyExitExt, FsPath, LoggedResult, MappedFile, ResultExt,
-    Utf8CStr, Utf8CStrBufArr, Utf8CStrWrite, WriteExt,
+    BytesExt, EarlyExitExt, FsPath, LoggedResult, MappedFile, ResultExt, Utf8CStr, Utf8CStrBuf,
+    WriteExt, cstr, log_err, map_args,
 };
 
 use crate::check_env;
@@ -342,13 +342,12 @@ impl Cpio {
         eprintln!("Extracting entry [{}] to [{}]", path, out);
 
         let out = Utf8CStr::from_string(out);
-        let out = FsPath::from(out);
 
-        let mut buf = Utf8CStrBufArr::default();
+        let mut buf = cstr::buf::default();
 
         // Make sure its parent directories exist
         if out.parent(&mut buf) {
-            FsPath::from(&buf).mkdirs(0o755)?;
+            buf.mkdirs(0o755)?;
         }
 
         let mode: mode_t = (entry.mode & 0o777).into();
@@ -362,7 +361,7 @@ impl Cpio {
             S_IFLNK => {
                 buf.clear();
                 buf.push_str(str::from_utf8(entry.data.as_slice())?);
-                FsPath::from(&buf).symlink_to(out)?;
+                out.create_symlink_to(&buf)?;
             }
             S_IFBLK | S_IFCHR => {
                 let dev = makedev(entry.rdevmajor.try_into()?, entry.rdevminor.try_into()?);
@@ -399,7 +398,6 @@ impl Cpio {
             return Err(log_err!("path cannot end with / for add"));
         }
         let file = Utf8CStr::from_string(file);
-        let file = FsPath::from(&file);
         let attr = file.get_attr()?;
 
         let mut content = Vec::<u8>::new();
@@ -413,8 +411,8 @@ impl Cpio {
             file.open(O_RDONLY | O_CLOEXEC)?.read_to_end(&mut content)?;
             mode | S_IFREG
         } else {
-            rdevmajor = unsafe { major(attr.st.st_rdev.as_()) }.as_();
-            rdevminor = unsafe { minor(attr.st.st_rdev.as_()) }.as_();
+            rdevmajor = major(attr.st.st_rdev.as_()).as_();
+            rdevminor = minor(attr.st.st_rdev.as_()).as_();
             if attr.is_block_device() {
                 mode | S_IFBLK
             } else if attr.is_char_device() {
@@ -746,8 +744,7 @@ impl Display for CpioEntry {
             Size::from_bytes(self.data.len())
                 .format()
                 .with_style(Style::Abbreviated)
-                .with_base(Base::Base10)
-                .to_string(),
+                .with_base(Base::Base10),
             self.rdevmajor,
             self.rdevminor,
         )
@@ -766,7 +763,7 @@ pub fn cpio_commands(argc: i32, argv: *const *const c_char) -> bool {
             CpioCli::from_args(&["magiskboot", "cpio"], &cmds).on_early_exit(print_cpio_usage);
 
         let file = Utf8CStr::from_string(&mut cli.file);
-        let mut cpio = if FsPath::from(file).exists() {
+        let mut cpio = if file.exists() {
             Cpio::load_from_file(file)?
         } else {
             Cpio::new()

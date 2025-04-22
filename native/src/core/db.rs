@@ -1,9 +1,10 @@
 #![allow(improper_ctypes, improper_ctypes_definitions)]
-use crate::daemon::{MagiskD, MAGISKD};
+use crate::daemon::{MAGISKD, MagiskD};
 use crate::ffi::{
-    open_and_init_db, sqlite3, sqlite3_errstr, DbEntryKey, DbStatement, DbValues, MntNsMode,
+    DbEntryKey, DbStatement, DbValues, MntNsMode, open_and_init_db, sqlite3, sqlite3_errstr,
 };
 use crate::socket::{IpcRead, IpcWrite};
+use DbArg::{Integer, Text};
 use base::{LoggedResult, ResultExt, Utf8CStr};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -15,7 +16,6 @@ use std::pin::Pin;
 use std::ptr;
 use std::ptr::NonNull;
 use thiserror::Error;
-use DbArg::{Integer, Text};
 
 fn sqlite_err_str(code: i32) -> &'static Utf8CStr {
     // SAFETY: sqlite3 always returns UTF-8 strings
@@ -138,7 +138,7 @@ unsafe impl Send for Sqlite3 {}
 type SqlBindCallback = Option<unsafe extern "C" fn(*mut c_void, i32, Pin<&mut DbStatement>) -> i32>;
 type SqlExecCallback = Option<unsafe extern "C" fn(*mut c_void, &[String], &DbValues)>;
 
-extern "C" {
+unsafe extern "C" {
     fn sql_exec_impl(
         db: *mut sqlite3,
         sql: &str,
@@ -160,16 +160,18 @@ struct DbArgs<'a> {
 }
 
 unsafe extern "C" fn bind_arguments(v: *mut c_void, idx: i32, stmt: Pin<&mut DbStatement>) -> i32 {
-    let args = &mut *(v as *mut DbArgs<'_>);
-    if args.curr < args.args.len() {
-        let arg = &args.args[args.curr];
-        args.curr += 1;
-        match *arg {
-            Text(v) => stmt.bind_text(idx, v),
-            Integer(v) => stmt.bind_int64(idx, v),
+    unsafe {
+        let args = &mut *(v as *mut DbArgs<'_>);
+        if args.curr < args.args.len() {
+            let arg = &args.args[args.curr];
+            args.curr += 1;
+            match *arg {
+                Text(v) => stmt.bind_text(idx, v),
+                Integer(v) => stmt.bind_int64(idx, v),
+            }
+        } else {
+            0
         }
-    } else {
-        0
     }
 }
 
@@ -178,8 +180,10 @@ unsafe extern "C" fn read_db_row<T: SqlTable>(
     columns: &[String],
     values: &DbValues,
 ) {
-    let table = &mut *(v as *mut T);
-    table.on_row(columns, values);
+    unsafe {
+        let table = &mut *(v as *mut T);
+        table.on_row(columns, values);
+    }
 }
 
 impl MagiskD {
@@ -189,10 +193,9 @@ impl MagiskD {
             let raw_db = open_and_init_db();
             *db = NonNull::new(raw_db).map(Sqlite3);
         }
-        if let Some(ref mut db) = *db {
-            f(db.0.as_ptr())
-        } else {
-            -1
+        match *db {
+            Some(ref mut db) => f(db.0.as_ptr()),
+            _ => -1,
         }
     }
 
@@ -314,7 +317,7 @@ impl MagiskD {
                 out.push('=');
                 out.push_str(values.get_text(i as i32));
             }
-            writer.write_encodable(&out).log().ok();
+            writer.write_encodable(&out).log_ok();
         };
         self.db_exec_with_rows(&sql, &[], &mut output_fn);
         writer.write_encodable("").log()
@@ -333,7 +336,7 @@ impl MagiskD {
     }
 }
 
-#[export_name = "sql_exec_rs"]
+#[unsafe(export_name = "sql_exec_rs")]
 unsafe extern "C" fn sql_exec_for_cxx(
     sql: &str,
     bind_callback: SqlBindCallback,
@@ -341,14 +344,16 @@ unsafe extern "C" fn sql_exec_for_cxx(
     exec_callback: SqlExecCallback,
     exec_cookie: *mut c_void,
 ) -> i32 {
-    MAGISKD.get().unwrap_unchecked().with_db(|db| {
-        sql_exec_impl(
-            db,
-            sql,
-            bind_callback,
-            bind_cookie,
-            exec_callback,
-            exec_cookie,
-        )
-    })
+    unsafe {
+        MAGISKD.get().unwrap_unchecked().with_db(|db| {
+            sql_exec_impl(
+                db,
+                sql,
+                bind_callback,
+                bind_cookie,
+                exec_callback,
+                exec_cookie,
+            )
+        })
+    }
 }

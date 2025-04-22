@@ -1,15 +1,15 @@
-use crate::consts::{LOGFILE, LOG_PIPE};
+use crate::consts::{LOG_PIPE, LOGFILE};
 use crate::ffi::get_magisk_tmp;
 use crate::logging::LogFile::{Actual, Buffer};
 use base::libc::{
-    getpid, gettid, localtime_r, pthread_sigmask, sigaddset, sigset_t, sigtimedwait, time_t,
-    timespec, tm, O_CLOEXEC, O_RDWR, O_WRONLY, PIPE_BUF, SIGPIPE, SIG_BLOCK, SIG_SETMASK,
+    O_CLOEXEC, O_RDWR, O_WRONLY, PIPE_BUF, SIG_BLOCK, SIG_SETMASK, SIGPIPE, getpid, gettid,
+    localtime_r, pthread_sigmask, sigaddset, sigset_t, sigtimedwait, time_t, timespec, tm,
 };
 use base::{
-    const_format::concatcp, libc, raw_cstr, FsPathBuf, LogLevel, Logger, ReadExt, Utf8CStr,
-    Utf8CStrBuf, Utf8CStrBufArr, Utf8CStrWrite, WriteExt, LOGGER,
+    FsPathBuilder, LOGGER, LogLevel, Logger, ReadExt, Utf8CStr, Utf8CStrBuf, WriteExt,
+    const_format::concatcp, cstr, libc, raw_cstr,
 };
-use bytemuck::{bytes_of, write_zeroes, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable, bytes_of, write_zeroes};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::FromPrimitive;
 use std::cmp::min;
@@ -42,7 +42,7 @@ enum ALogPriority {
 
 type ThreadEntry = extern "C" fn(*mut c_void) -> *mut c_void;
 
-extern "C" {
+unsafe extern "C" {
     fn __android_log_write(prio: i32, tag: *const c_char, msg: *const c_char);
     fn strftime(buf: *mut c_char, len: usize, fmt: *const c_char, tm: *const tm) -> usize;
     fn new_daemon_thread(entry: ThreadEntry, arg: *mut c_void);
@@ -130,7 +130,7 @@ fn write_log_to_pipe(mut logd: &File, prio: i32, msg: &Utf8CStr) -> io::Result<u
     let io2 = IoSlice::new(msg);
     let result = logd.write_vectored(&[io1, io2]);
     if let Err(ref e) = result {
-        let mut buf = Utf8CStrBufArr::default();
+        let mut buf = cstr::buf::default();
         buf.write_fmt(format_args!("Cannot write_log_to_pipe: {}", e))
             .ok();
         android_log_write(LogLevel::Error, &buf);
@@ -180,10 +180,9 @@ pub fn zygisk_get_logd() -> i32 {
     let mut fd = ZYGISK_LOGD.load(Ordering::Relaxed);
     if fd < 0 {
         android_logging();
-        let mut buf = Utf8CStrBufArr::default();
-        let path = FsPathBuf::new(&mut buf)
-            .join(get_magisk_tmp())
-            .join(LOG_PIPE);
+        let path = cstr::buf::default()
+            .join_path(get_magisk_tmp())
+            .join_path(LOG_PIPE);
         // Open as RW as sometimes it may block
         fd = unsafe { libc::open(path.as_ptr(), O_RDWR | O_CLOEXEC) };
         if fd >= 0 {
@@ -269,7 +268,7 @@ extern "C" fn logfile_writer(arg: *mut c_void) -> *mut c_void {
 
         let mut meta = LogMeta::zeroed();
         let mut msg_buf = [0u8; MAX_MSG_LEN];
-        let mut aux = Utf8CStrBufArr::<64>::new();
+        let mut aux = cstr::buf::new::<64>();
 
         loop {
             // Read request
@@ -319,12 +318,7 @@ extern "C" fn logfile_writer(arg: *mut c_void) -> *mut c_void {
                 if localtime_r(&secs, &mut tm).is_null() {
                     continue;
                 }
-                let len = strftime(
-                    aux.mut_buf().as_mut_ptr().cast(),
-                    aux.capacity(),
-                    raw_cstr!("%m-%d %T"),
-                    &tm,
-                );
+                let len = strftime(aux.as_mut_ptr(), aux.capacity(), raw_cstr!("%m-%d %T"), &tm);
                 aux.set_len(len);
                 aux.write_fmt(format_args!(
                     ".{:03} {:5} {:5} {} : ",
@@ -363,10 +357,9 @@ pub fn setup_logfile() {
 }
 
 pub fn start_log_daemon() {
-    let mut buf = Utf8CStrBufArr::default();
-    let path = FsPathBuf::new(&mut buf)
-        .join(get_magisk_tmp())
-        .join(LOG_PIPE);
+    let path = cstr::buf::default()
+        .join_path(get_magisk_tmp())
+        .join_path(LOG_PIPE);
 
     unsafe {
         libc::mkfifo(path.as_ptr(), 0o666);

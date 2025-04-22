@@ -1,13 +1,13 @@
 use std::fmt;
 use std::fmt::Arguments;
-use std::io::{stderr, stdout, Write};
+use std::io::{Write, stderr, stdout};
 use std::process::exit;
 
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::FromPrimitive;
 
 use crate::ffi::LogLevelCxx;
-use crate::{Utf8CStr, Utf8CStrBufArr};
+use crate::{Utf8CStr, cstr};
 
 // Ugly hack to avoid using enum
 #[allow(non_snake_case, non_upper_case_globals)]
@@ -84,7 +84,7 @@ fn log_with_writer<F: FnOnce(LogWriter)>(level: LogLevel, f: F) {
     }
     f(logger.write);
     if matches!(level, LogLevel::ErrorCxx) && (logger.flags & LogFlag::ExitOnError) != 0 {
-        exit(1);
+        exit(-1);
     }
 }
 
@@ -96,7 +96,7 @@ pub fn log_from_cxx(level: LogLevelCxx, msg: &Utf8CStr) {
 
 pub fn log_with_formatter<F: FnOnce(Formatter) -> fmt::Result>(level: LogLevel, f: F) {
     log_with_writer(level, |write| {
-        let mut buf = Utf8CStrBufArr::default();
+        let mut buf = cstr::buf::default();
         f(&mut buf).ok();
         write(level, &buf);
     });

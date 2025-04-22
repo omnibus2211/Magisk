@@ -63,15 +63,17 @@ fn remove_pattern(buf: &mut [u8], pattern_matcher: unsafe fn(&[u8]) -> Option<us
 
 pub fn patch_verity(buf: &mut [u8]) -> usize {
     unsafe fn match_verity_pattern(buf: &[u8]) -> Option<usize> {
-        match_patterns!(
-            buf,
-            b"verifyatboot",
-            b"verify",
-            b"avb_keys",
-            b"avb",
-            b"support_scfs",
-            b"fsverity"
-        )
+        unsafe {
+            match_patterns!(
+                buf,
+                b"verifyatboot",
+                b"verify",
+                b"avb_keys",
+                b"avb",
+                b"support_scfs",
+                b"fsverity"
+            )
+        }
     }
 
     remove_pattern(buf, match_verity_pattern)
@@ -79,7 +81,7 @@ pub fn patch_verity(buf: &mut [u8]) -> usize {
 
 pub fn patch_encryption(buf: &mut [u8]) -> usize {
     unsafe fn match_encryption_pattern(buf: &[u8]) -> Option<usize> {
-        match_patterns!(buf, b"forceencrypt", b"forcefdeorfbe", b"fileencryption")
+        unsafe { match_patterns!(buf, b"forceencrypt", b"forcefdeorfbe", b"fileencryption") }
     }
 
     remove_pattern(buf, match_encryption_pattern)
@@ -95,7 +97,7 @@ fn hex2byte(hex: &[u8]) -> Vec<u8> {
         let low = bytes[1].to_ascii_uppercase() - b'0';
         let h = if high > 9 { high - 7 } else { high };
         let l = if low > 9 { low - 7 } else { low };
-        v.push(h << 4 | l);
+        v.push((h << 4) | l);
     }
     v
 }

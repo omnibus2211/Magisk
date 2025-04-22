@@ -1,71 +1,40 @@
+#pragma once
+
+#define DEFAULT_DT_DIR "/proc/device-tree/firmware/android"
+#define REDIR_PATH "/data/magiskinit"
+
+#define PRELOAD_LIB    "/dev/preload.so"
+#define PRELOAD_POLICY "/dev/sepolicy"
+#define PRELOAD_ACK    "/dev/ack"
+
+#ifdef __cplusplus
+
 #include <base.hpp>
 #include <stream.hpp>
+#include <sepolicy.hpp>
 
 #include "init-rs.hpp"
 
-using kv_pairs = std::vector<std::pair<std::string, std::string>>;
+int magisk_proxy_main(int, char *argv[]);
+rust::Utf8CStr backup_init();
 
-struct BootConfig {
-    bool skip_initramfs;
-    bool force_normal_boot;
-    bool rootwait;
-    bool emulator;
-    char slot[3];
-    char dt_dir[64];
-    char fstab_suffix[32];
-    char hardware[32];
-    char hardware_plat[32];
-    kv_pairs partition_map;
+// Expose some constants to Rust
 
-    void init();
-private:
-    void set(const kv_pairs &);
-    void print();
+static inline rust::Utf8CStr split_plat_cil() {
+    return SPLIT_PLAT_CIL;
 };
 
-#define DEFAULT_DT_DIR "/proc/device-tree/firmware/android"
-#define INIT_PATH  "/system/bin/init"
-#define REDIR_PATH "/data/magiskinit"
+static inline rust::Utf8CStr preload_lib() {
+    return PRELOAD_LIB;
+}
 
-int magisk_proxy_main(int argc, char *argv[]);
-bool unxz(out_stream &strm, rust::Slice<const uint8_t> bytes);
-bool check_two_stage();
-const char *backup_init();
-void restore_ramdisk_init();
+static inline rust::Utf8CStr preload_policy() {
+    return PRELOAD_POLICY;
+}
 
-class MagiskInit {
-private:
-    std::string preinit_dev;
-    std::vector<std::string> mount_list;
-    char **argv;
-    BootConfig config;
+static inline rust::Utf8CStr preload_ack() {
+    return PRELOAD_ACK;
+}
 
-    // Setup mounts and environment
-    void setup_tmp(const char *path);
-    void collect_devices();
-    void mount_preinit_dir();
-    void prepare_data();
-    dev_t find_block(const char *partname);
-    bool mount_system_root();
 
-    // Setup and patch root directory
-    void parse_config_file();
-    void patch_rw_root();
-    void patch_ro_root();
-
-    // Two stage init
-    void redirect_second_stage();
-    void first_stage();
-    void second_stage();
-
-    // SELinux
-    void patch_sepolicy(const char *in, const char *out);
-    bool hijack_sepolicy();
-
-    [[noreturn]] void exec_init();
-    void legacy_system_as_root();
-    void rootfs();
-public:
-    explicit MagiskInit(char *argv[]);
-    void start();
-};
+#endif

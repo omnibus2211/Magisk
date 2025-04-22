@@ -12,7 +12,7 @@ emu="$ANDROID_HOME/emulator/emulator"
 sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 avd="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
 
-boot_timeout=600
+boot_timeout=100
 
 core_count=$(nproc)
 if [ $core_count -gt 8 ]; then
@@ -53,9 +53,7 @@ run_setup() {
   local app='com.topjohnwu.magisk.test/com.topjohnwu.magisk.test.AppTestRunner'
 
   # Run setup through the test app
-  am_instrument '.Environment#setupMagisk' $app
-  # Install LSPosed
-  am_instrument '.Environment#setupLsposed' $app
+  am_instrument '.Environment#setupEnvironment' $app
 }
 
 run_tests() {

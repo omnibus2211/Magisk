@@ -1,11 +1,11 @@
 use crate::consts::{APP_PACKAGE_NAME, MAGISK_VER_CODE};
-use crate::daemon::{to_app_id, MagiskD, AID_APP_END, AID_APP_START, AID_USER_OFFSET};
-use crate::ffi::{get_magisk_tmp, install_apk, uninstall_pkg, DbEntryKey};
-use base::libc::{O_CLOEXEC, O_CREAT, O_RDONLY, O_TRUNC, O_WRONLY};
+use crate::daemon::{AID_APP_END, AID_APP_START, AID_USER_OFFSET, MagiskD, to_app_id};
+use crate::ffi::{DbEntryKey, get_magisk_tmp, install_apk, uninstall_pkg};
 use base::WalkResult::{Abort, Continue, Skip};
+use base::libc::{O_CLOEXEC, O_CREAT, O_RDONLY, O_TRUNC, O_WRONLY};
 use base::{
-    cstr, error, fd_get_attr, open_fd, warn, BufReadExt, Directory, FsPath, FsPathBuf,
-    LoggedResult, ReadExt, ResultExt, Utf8CStrBuf, Utf8CStrBufArr,
+    BufReadExt, Directory, FsPath, FsPathBuilder, LoggedResult, ReadExt, ResultExt, Utf8CStrBuf,
+    cstr, error, fd_get_attr, open_fd, warn,
 };
 use bit_set::BitSet;
 use cxx::CxxString;
@@ -152,12 +152,12 @@ fn read_certificate(apk: &mut File, version: i32) -> Vec<u8> {
     res.log().unwrap_or(vec![])
 }
 
-fn find_apk_path(pkg: &str, buf: &mut dyn Utf8CStrBuf) -> io::Result<()> {
+fn find_apk_path(pkg: &str, buf: &mut dyn Utf8CStrBuf) -> LoggedResult<()> {
     Directory::open(cstr!("/data/app"))?.pre_order_walk(|e| {
         if !e.is_dir() {
             return Ok(Skip);
         }
-        let name_bytes = e.d_name().to_bytes();
+        let name_bytes = e.name().as_bytes();
         if name_bytes.starts_with(pkg.as_bytes()) && name_bytes[pkg.len()] == b'-' {
             // Found the APK path, we can abort now
             e.path(buf)?;
@@ -239,13 +239,12 @@ impl TrackedFile {
 
 impl ManagerInfo {
     fn check_dyn(&mut self, daemon: &MagiskD, user: i32, pkg: &str) -> Status {
-        let mut arr = Utf8CStrBufArr::default();
-        let apk = FsPathBuf::new(&mut arr)
-            .join(daemon.app_data_dir())
-            .join_fmt(user)
-            .join(pkg)
-            .join("dyn")
-            .join("current.apk");
+        let apk = cstr::buf::default()
+            .join_path(daemon.app_data_dir())
+            .join_path_fmt(user)
+            .join_path(pkg)
+            .join_path("dyn")
+            .join_path("current.apk");
         let uid: i32;
         let cert = match apk.open(O_RDONLY | O_CLOEXEC) {
             Ok(mut fd) => {
@@ -274,11 +273,10 @@ impl ManagerInfo {
     }
 
     fn check_stub(&mut self, user: i32, pkg: &str) -> Status {
-        let mut arr = Utf8CStrBufArr::default();
-        if find_apk_path(pkg, &mut arr).is_err() {
+        let mut apk = cstr::buf::default();
+        if find_apk_path(pkg, &mut apk).is_err() {
             return Status::NotInstalled;
         }
-        let apk = FsPath::from(&arr);
 
         let cert = match apk.open(O_RDONLY | O_CLOEXEC) {
             Ok(mut fd) => read_certificate(&mut fd, -1),
@@ -287,7 +285,7 @@ impl ManagerInfo {
 
         if cert.is_empty() || (pkg == self.repackaged_pkg && cert != self.repackaged_cert) {
             error!("pkg: repackaged APK signature invalid: {}", apk);
-            uninstall_pkg(apk);
+            uninstall_pkg(&apk);
             return Status::CertMismatch;
         }
 
@@ -299,11 +297,10 @@ impl ManagerInfo {
     }
 
     fn check_orig(&mut self, user: i32) -> Status {
-        let mut arr = Utf8CStrBufArr::default();
-        if find_apk_path(APP_PACKAGE_NAME, &mut arr).is_err() {
+        let mut apk = cstr::buf::default();
+        if find_apk_path(APP_PACKAGE_NAME, &mut apk).is_err() {
             return Status::NotInstalled;
         }
-        let apk = FsPath::from(&arr);
 
         let cert = match apk.open(O_RDONLY | O_CLOEXEC) {
             Ok(mut fd) => read_certificate(&mut fd, MAGISK_VER_CODE),
@@ -358,7 +355,7 @@ impl ManagerInfo {
         {
             // no APK
             if file.path == Path::new("/data/system/packages.xml") {
-                if install {
+                if install && !daemon.is_emulator {
                     self.install_stub();
                 }
                 return (-1, "");
@@ -403,7 +400,7 @@ impl ManagerInfo {
                         )
                     } else {
                         (-1, "")
-                    }
+                    };
                 }
                 Status::NotInstalled => {
                     daemon.rm_db_string(DbEntryKey::SuManager).ok();
@@ -435,7 +432,7 @@ impl ManagerInfo {
         self.tracked_files
             .insert(user, TrackedFile::new("/data/system/packages.xml"));
 
-        if install {
+        if install && !daemon.is_emulator {
             self.install_stub();
         }
         (-1, "")
@@ -444,11 +441,10 @@ impl ManagerInfo {
 
 impl MagiskD {
     fn get_package_uid(&self, user: i32, pkg: &str) -> i32 {
-        let mut arr = Utf8CStrBufArr::default();
-        let path = FsPathBuf::new(&mut arr)
-            .join(self.app_data_dir())
-            .join_fmt(user)
-            .join(pkg);
+        let path = cstr::buf::default()
+            .join_path(self.app_data_dir())
+            .join_path_fmt(user)
+            .join_path(pkg);
         path.get_attr()
             .map(|attr| attr.st.st_uid as i32)
             .unwrap_or(-1)
@@ -457,19 +453,18 @@ impl MagiskD {
     pub fn preserve_stub_apk(&self) {
         let mut info = self.manager_info.lock().unwrap();
 
-        let mut arr = Utf8CStrBufArr::default();
-        let apk = FsPathBuf::new(&mut arr)
-            .join(get_magisk_tmp())
-            .join("stub.apk");
+        let apk = cstr::buf::default()
+            .join_path(get_magisk_tmp())
+            .join_path("stub.apk");
 
         if let Ok(mut fd) = apk.open(O_RDONLY | O_CLOEXEC) {
             info.trusted_cert = read_certificate(&mut fd, MAGISK_VER_CODE);
             // Seek the fd back to start
-            fd.seek(SeekFrom::Start(0)).log().ok();
+            fd.seek(SeekFrom::Start(0)).log_ok();
             info.stub_apk_fd = Some(fd);
         }
 
-        apk.remove().log().ok();
+        apk.remove().log_ok();
     }
 
     pub fn get_manager_uid(&self, user: i32) -> i32 {
@@ -490,14 +485,16 @@ impl MagiskD {
     }
 
     pub unsafe fn get_manager_for_cxx(&self, user: i32, ptr: *mut CxxString, install: bool) -> i32 {
-        let mut info = self.manager_info.lock().unwrap();
-        let (uid, pkg) = info.get_manager(self, user, install);
-        if let Some(str) = ptr.as_mut() {
-            let mut str = Pin::new_unchecked(str);
-            str.as_mut().clear();
-            str.push_str(pkg);
+        unsafe {
+            let mut info = self.manager_info.lock().unwrap();
+            let (uid, pkg) = info.get_manager(self, user, install);
+            if let Some(str) = ptr.as_mut() {
+                let mut str = Pin::new_unchecked(str);
+                str.as_mut().clear();
+                str.push_str(pkg);
+            }
+            uid
         }
-        uid
     }
 
     // app_id = app_no + AID_APP_START

@@ -1,13 +1,13 @@
-use crate::{ffi, StrErr, Utf8CStr};
+use crate::{StrErr, Utf8CStr, ffi};
 use argh::EarlyExit;
 use libc::c_char;
 use std::fmt::Arguments;
 use std::io::Write;
 use std::mem::ManuallyDrop;
 use std::process::exit;
-use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::Arc;
-use std::{fmt, io, slice, str};
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::{fmt, slice, str};
 
 pub fn errno() -> &'static mut i32 {
     unsafe { &mut *libc::__errno() }
@@ -16,66 +16,24 @@ pub fn errno() -> &'static mut i32 {
 // When len is 0, don't care whether buf is null or not
 #[inline]
 pub unsafe fn slice_from_ptr<'a, T>(buf: *const T, len: usize) -> &'a [T] {
-    if len == 0 {
-        &[]
-    } else {
-        slice::from_raw_parts(buf, len)
+    unsafe {
+        if len == 0 {
+            &[]
+        } else {
+            slice::from_raw_parts(buf, len)
+        }
     }
 }
 
 // When len is 0, don't care whether buf is null or not
 #[inline]
 pub unsafe fn slice_from_ptr_mut<'a, T>(buf: *mut T, len: usize) -> &'a mut [T] {
-    if len == 0 {
-        &mut []
-    } else {
-        slice::from_raw_parts_mut(buf, len)
-    }
-}
-
-// Check libc return value and map to Result
-pub trait LibcReturn
-where
-    Self: Copy,
-{
-    fn is_error(&self) -> bool;
-    fn check_os_err(self) -> io::Result<Self> {
-        if self.is_error() {
-            Err(io::Error::last_os_error())
+    unsafe {
+        if len == 0 {
+            &mut []
         } else {
-            Ok(self)
+            slice::from_raw_parts_mut(buf, len)
         }
-    }
-    fn as_os_err(self) -> io::Result<()> {
-        self.check_os_err()?;
-        Ok(())
-    }
-}
-
-macro_rules! impl_libc_return {
-    ($($t:ty)*) => ($(
-        impl LibcReturn for $t {
-            #[inline]
-            fn is_error(&self) -> bool {
-                *self < 0
-            }
-        }
-    )*)
-}
-
-impl_libc_return! { i8 i16 i32 i64 isize }
-
-impl<T> LibcReturn for *const T {
-    #[inline]
-    fn is_error(&self) -> bool {
-        self.is_null()
-    }
-}
-
-impl<T> LibcReturn for *mut T {
-    #[inline]
-    fn is_error(&self) -> bool {
-        self.is_null()
     }
 }
 

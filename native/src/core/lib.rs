@@ -8,18 +8,19 @@
 
 use crate::ffi::SuRequest;
 use crate::socket::Encodable;
-use base::{libc, Utf8CStr};
-use cxx::{type_id, ExternType};
-use daemon::{daemon_entry, MagiskD};
+use base::{Utf8CStr, libc};
+use cxx::{ExternType, type_id};
+use daemon::{MagiskD, daemon_entry};
 use derive::Decodable;
 use logging::{android_logging, setup_logfile, zygisk_close_logd, zygisk_get_logd, zygisk_logging};
-use mount::{clean_mounts, find_preinit_device, revert_unmount};
+use mount::{find_preinit_device, revert_unmount};
 use resetprop::{persist_delete_prop, persist_get_prop, persist_get_props, persist_set_prop};
 use socket::{recv_fd, recv_fds, send_fd, send_fds};
 use std::fs::File;
 use std::mem::ManuallyDrop;
 use std::ops::DerefMut;
 use std::os::fd::FromRawFd;
+use su::{get_pty_num, pump_tty, restore_stdin};
 use zygisk::zygisk_should_load_module;
 
 #[path = "../include/consts.rs"]
@@ -192,7 +193,6 @@ pub mod ffi {
         fn zygisk_close_logd();
         fn zygisk_get_logd() -> i32;
         fn setup_logfile();
-        fn clean_mounts();
         fn find_preinit_device() -> String;
         fn revert_unmount(pid: i32);
         fn zygisk_should_load_module(flags: u32) -> bool;
@@ -208,6 +208,10 @@ pub mod ffi {
 
         #[namespace = "rust"]
         fn daemon_entry();
+
+        fn pump_tty(infd: i32, outfd: i32);
+        fn get_pty_num(fd: i32) -> i32;
+        fn restore_stdin() -> bool;
     }
 
     // Default constructors
@@ -258,8 +262,10 @@ unsafe impl ExternType for UCred {
 
 impl SuRequest {
     unsafe fn write_to_fd(&self, fd: i32) {
-        let mut w = ManuallyDrop::new(File::from_raw_fd(fd));
-        self.encode(w.deref_mut()).ok();
+        unsafe {
+            let mut w = ManuallyDrop::new(File::from_raw_fd(fd));
+            self.encode(w.deref_mut()).ok();
+        }
     }
 }
 

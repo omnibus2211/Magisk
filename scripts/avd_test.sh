@@ -3,7 +3,10 @@
 set -xe
 . scripts/test_common.sh
 
-emu_args_base="-no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -read-only -no-snapshot -cores $core_count"
+emu_port=5682
+export ANDROID_SERIAL="emulator-$emu_port"
+
+emu_args_base="-no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -read-only -no-snapshot -port $emu_port -cores $core_count"
 emu_pid=
 
 atd_min_api=30
@@ -21,20 +24,6 @@ cleanup() {
   exit 1
 }
 
-wait_for_bootanim() {
-  set -e
-  adb wait-for-device
-  while true; do
-    local result="$(adb exec-out getprop init.svc.bootanim)"
-    if [ $? -ne 0 ]; then
-      exit 1
-    elif [ "$result" = "stopped" ]; then
-      break
-    fi
-    sleep 2
-  done
-}
-
 wait_for_boot() {
   set -e
   adb wait-for-device
@@ -50,10 +39,9 @@ wait_for_boot() {
 }
 
 wait_emu() {
-  local wait_fn=$1
   local which_pid
 
-  timeout $boot_timeout bash -c $wait_fn &
+  timeout $boot_timeout bash -c wait_for_boot &
   local wait_pid=$!
 
   # Handle the case when emulator dies earlier than timeout
@@ -68,18 +56,19 @@ test_emu() {
   print_title "* Testing $avd_pkg ($variant)"
 
   if [ -n "$AVD_TEST_LOG" ]; then
+    rm -f logcat.log
     "$emu" @test $emu_args > kernel.log 2>&1 &
   else
     "$emu" @test $emu_args > /dev/null 2>&1 &
   fi
 
   emu_pid=$!
-  wait_emu wait_for_boot
+  wait_emu
 
   run_setup $variant
 
   adb reboot
-  wait_emu wait_for_boot
+  wait_emu
 
   run_tests
 }
@@ -135,7 +124,7 @@ test_main() {
   print_title "* Launching $avd_pkg"
   "$emu" @test $emu_args >/dev/null 2>&1 &
   emu_pid=$!
-  wait_emu wait_for_bootanim
+  wait_emu
 
   # Update arguments for Magisk runs
   emu_args="$emu_args -ramdisk magisk_patched.img -feature -SystemAsRoot"
@@ -145,7 +134,7 @@ test_main() {
 
   if [ -z "$AVD_TEST_SKIP_DEBUG" ]; then
     # Patch and test debug build
-    ./build.py avd_patch -s "$ramdisk" magisk_patched.img
+    ./build.py avd_patch "$ramdisk" magisk_patched.img
     kill -INT $emu_pid
     wait $emu_pid
     test_emu debug $api
@@ -153,7 +142,7 @@ test_main() {
 
   if [ -z "$AVD_TEST_SKIP_RELEASE" ]; then
     # Patch and test release build
-    ./build.py -r avd_patch -s "$ramdisk" magisk_patched.img
+    ./build.py -r avd_patch "$ramdisk" magisk_patched.img
     kill -INT $emu_pid
     wait $emu_pid
     test_emu release $api
@@ -167,7 +156,6 @@ test_main() {
 
 trap cleanup EXIT
 export -f wait_for_boot
-export -f wait_for_bootanim
 
 case $(uname -m) in
   'arm64'|'aarch64')
@@ -204,9 +192,9 @@ else
     test_main $api
   done
   # Android 16 Beta
-  test_main Baklava google_apis
+  test_main 36 google_apis
   # Run 16k page tests
-  test_main Baklava google_apis_ps16k
+  test_main 36 google_apis_ps16k
 fi
 
 "$avd" delete avd -n test

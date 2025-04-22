@@ -15,18 +15,18 @@ use rsa::pkcs1v15::{
     Signature as RsaSignature, SigningKey as RsaSigningKey, VerifyingKey as RsaVerifyingKey,
 };
 use rsa::pkcs8::SubjectPublicKeyInfoRef;
-use rsa::signature::hazmat::{PrehashSigner, PrehashVerifier};
 use rsa::signature::SignatureEncoding;
+use rsa::signature::hazmat::{PrehashSigner, PrehashVerifier};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use sha1::Sha1;
 use sha2::{Sha256, Sha384, Sha512};
-use x509_cert::der::asn1::{OctetString, PrintableString};
-use x509_cert::der::Any;
-use x509_cert::spki::AlgorithmIdentifier;
 use x509_cert::Certificate;
+use x509_cert::der::Any;
+use x509_cert::der::asn1::{OctetString, PrintableString};
+use x509_cert::spki::AlgorithmIdentifier;
 
 use base::libc::c_char;
-use base::{log_err, LoggedResult, MappedFile, ResultExt, StrErr, Utf8CStr};
+use base::{LoggedResult, MappedFile, ResultExt, StrErr, Utf8CStr, log_err};
 
 use crate::ffi::BootImage;
 
@@ -157,20 +157,32 @@ struct Signer {
 impl Signer {
     fn from_private_key(key: &[u8]) -> LoggedResult<Signer> {
         let digest: Box<dyn DynDigest>;
-        let key = if let Ok(rsa) = RsaPrivateKey::from_pkcs8_der(key) {
-            digest = Box::<Sha256>::default();
-            SigningKey::SHA256withRSA(RsaSigningKey::<Sha256>::new(rsa))
-        } else if let Ok(ec) = P256SigningKey::from_pkcs8_der(key) {
-            digest = Box::<Sha256>::default();
-            SigningKey::SHA256withECDSA(ec)
-        } else if let Ok(ec) = P384SigningKey::from_pkcs8_der(key) {
-            digest = Box::<Sha384>::default();
-            SigningKey::SHA384withECDSA(ec)
-        } else if let Ok(ec) = P521SigningKey::from_pkcs8_der(key) {
-            digest = Box::<Sha512>::default();
-            SigningKey::SHA521withECDSA(ec)
-        } else {
-            return Err(log_err!("Unsupported private key"));
+        let key = match RsaPrivateKey::from_pkcs8_der(key) {
+            Ok(rsa) => {
+                digest = Box::<Sha256>::default();
+                SigningKey::SHA256withRSA(RsaSigningKey::<Sha256>::new(rsa))
+            }
+            _ => match P256SigningKey::from_pkcs8_der(key) {
+                Ok(ec) => {
+                    digest = Box::<Sha256>::default();
+                    SigningKey::SHA256withECDSA(ec)
+                }
+                _ => match P384SigningKey::from_pkcs8_der(key) {
+                    Ok(ec) => {
+                        digest = Box::<Sha384>::default();
+                        SigningKey::SHA384withECDSA(ec)
+                    }
+                    _ => match P521SigningKey::from_pkcs8_der(key) {
+                        Ok(ec) => {
+                            digest = Box::<Sha512>::default();
+                            SigningKey::SHA521withECDSA(ec)
+                        }
+                        _ => {
+                            return Err(log_err!("Unsupported private key"));
+                        }
+                    },
+                },
+            },
         };
         Ok(Signer { digest, key })
     }
